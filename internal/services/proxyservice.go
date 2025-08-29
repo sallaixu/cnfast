@@ -2,6 +2,7 @@ package services
 
 import (
 	"cnfast/internal/enums"
+	"cnfast/internal/pkg/help"
 	"cnfast/internal/pkg/httpclient"
 	"fmt"
 	"os"
@@ -32,11 +33,16 @@ func (s *ProxyService) getProxyList(proxyType enums.ProxyType) ([]ProxyService, 
 }
 
 func checkCmd() bool {
+	// 没有参数打印help
+	if len(os.Args) == 1 {
+		help.PrintHelp()
+		return true
+	}
 
 	firstArg := os.Args[1]
 	flag := false
 	switch firstArg {
-	case "-v":
+	case "v":
 		fmt.Println("")
 		fmt.Println("------------------------------------------------")
 		fmt.Println("cnfast: v1.0.0")

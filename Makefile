@@ -7,7 +7,7 @@ BUILD_DIR := build
 GO_PACKAGE := .
 
 # 定义平台架构组合
-PLATFORMS := linux-amd64 linux-arm64 windows-amd64 windows-arm64
+PLATFORMS := linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64
 
 # 默认目标
 all: clean $(PLATFORMS)
@@ -39,6 +39,7 @@ linux: linux-amd64 linux-arm64
 win: windows-amd64 windows-arm64
 arm: linux-arm64 windows-arm64
 amd: linux-amd64 windows-amd64
+darwin: darwin-amd64 darwin-arm64
 
 # 构建当前本地平台
 local:
