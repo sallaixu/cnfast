@@ -31,8 +31,30 @@ func (s *ProxyService) getProxyList(proxyType enums.ProxyType) ([]ProxyService, 
 	return result, nil
 }
 
+func checkCmd() bool {
+
+	firstArg := os.Args[1]
+	flag := false
+	switch firstArg {
+	case "-v":
+		fmt.Println("")
+		fmt.Println("------------------------------------------------")
+		fmt.Println("cnfast: v1.0.0")
+		fmt.Println("github: https://github.com/sallaixu/cnfast")
+		fmt.Println("note  : 让每个想法都能连接世界")
+		fmt.Println("------------------------------------------------")
+		fmt.Println("")
+		flag = true
+	}
+	return flag
+}
+
 // 启动服务
 func (p ProxyService) Start() {
+
+	if checkCmd() {
+		return
+	}
 
 	if len(os.Args) < 2 {
 		fmt.Println("args lenght less than 2")
