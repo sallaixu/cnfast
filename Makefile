@@ -27,10 +27,10 @@ $(PLATFORMS):
 	@mkdir -p $(BUILD_DIR)/$(OS)-$(ARCH)
 	
 	@if [ "$(OS)" = "windows" ]; then \
-		GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe $(GO_PACKAGE); \
+		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe -ldflags="-s -w" $(GO_PACKAGE); \
 		echo "Built: $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe"; \
 	else \
-		GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME) $(GO_PACKAGE); \
+		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME) -ldflags="-s -w" $(GO_PACKAGE); \
 		echo "Built: $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME)"; \
 	fi
 
