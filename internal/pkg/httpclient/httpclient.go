@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,109 +10,126 @@ import (
 	"time"
 )
 
-// Client represents an HTTP client with configuration
+/* ---------- 公共类型 ---------- */
+
+// Resp 后端统一包装体
+type Resp struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data"`
+}
+
+// BizError 业务失败
+type BizError struct {
+	Code    int
+	Message string
+}
+
+func (e *BizError) Error() string {
+	return fmt.Sprintf("biz %d: %s", e.Code, e.Message)
+}
+
+/* ---------- Client ---------- */
+
 type Client struct {
 	BaseURL    string
 	HTTPClient *http.Client
-	Headers    map[string]string
+	headers    map[string]string
 }
 
-// New creates a new HTTP client with default configuration
+// New 创建客户端
 func New(baseURL string) *Client {
 	return &Client{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		Headers: make(map[string]string),
+		headers: make(map[string]string),
 	}
 }
 
-// SetHeader sets a header for all requests
+// SetHeader 设置公共头
 func (c *Client) SetHeader(key, value string) {
-	c.Headers[key] = value
+	c.headers[key] = value
 }
 
-// Get performs a GET request and unmarshals the JSON response
-func (c *Client) Get(endpoint string, result interface{}) error {
-	url := c.BaseURL + endpoint
+/* ---------- 内部：统一请求 & 解析 ---------- */
 
-	req, err := http.NewRequest("GET", url, nil)
+func (c *Client) doRequest(ctx context.Context, method, endpoint string, body interface{}) ([]byte, error) {
+	// 1. 构造请求
+	var bodyReader io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal body: %w", err)
+		}
+		bodyReader = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+endpoint, bodyReader)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("new request: %w", err)
 	}
 
-	// Set headers
-	for key, value := range c.Headers {
-		req.Header.Set(key, value)
+	// 2. 头
+	if req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
 	}
 
+	// 3. 发送
 	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
+		return nil, fmt.Errorf("http do: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
+		return nil, fmt.Errorf("read body: %w", err)
 	}
 
-	if err := json.Unmarshal(body, result); err != nil {
-		return fmt.Errorf("failed to unmarshal JSON: %w", err)
+	// 4. 解析统一包装
+	var r Resp
+	if err = json.Unmarshal(bodyBytes, &r); err != nil {
+		return nil, fmt.Errorf("unmarshal resp: %w", err)
 	}
 
+	switch r.Code {
+	case 0: // 成功
+		if r.Data == nil {
+			return nil, nil
+		}
+		// 再序列化 data 段返回
+		return json.Marshal(r.Data)
+	default: // 业务错误
+		return nil, &BizError{Code: r.Code, Message: r.Message}
+	}
+}
+
+/* ---------- 对外 API：只返回 data 段 ---------- */
+
+// Get JSON 返回
+func (c *Client) Get(ctx context.Context, endpoint string, result interface{}) error {
+	data, err := c.doRequest(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	if result != nil && len(data) > 0 {
+		return json.Unmarshal(data, result)
+	}
 	return nil
 }
 
-// Post performs a POST request with JSON body and unmarshals the JSON response
-func (c *Client) Post(endpoint string, body interface{}, result interface{}) error {
-	url := c.BaseURL + endpoint
-
-	var reader io.Reader
-	if body != nil {
-		jsonData, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("failed to marshal request body: %w", err)
-		}
-		reader = io.NopCloser(bytes.NewReader(jsonData))
-	}
-
-	req, err := http.NewRequest("POST", url, reader)
+// Post JSON 返回
+func (c *Client) Post(ctx context.Context, endpoint string, body interface{}, result interface{}) error {
+	data, err := c.doRequest(ctx, http.MethodPost, endpoint, body)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return err
 	}
-
-	// Set headers
-	req.Header.Set("Content-Type", "application/json")
-	for key, value := range c.Headers {
-		req.Header.Set(key, value)
+	if result != nil && len(data) > 0 {
+		return json.Unmarshal(data, result)
 	}
-
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to execute request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	responseBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if result != nil {
-		if err := json.Unmarshal(responseBody, result); err != nil {
-			return fmt.Errorf("failed to unmarshal JSON: %w", err)
-		}
-	}
-
 	return nil
 }
