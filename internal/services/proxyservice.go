@@ -2,15 +2,16 @@ package services
 
 import (
 	"cnfast/internal/enums"
+	"cnfast/internal/models"
 	"cnfast/internal/pkg/help"
 	"cnfast/internal/pkg/httpclient"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 )
 
-const (
+var (
 	proxyPrefix = "https://proxy.pipers.cn/"
 )
 
@@ -26,22 +27,53 @@ func CreateProxyService(baseURL string) *ProxyService {
 }
 
 // 获取可用代理列表
-func (s *ProxyService) getProxyList(proxyType enums.ProxyType) ([]ProxyService, error) {
-	fmt.Println("query proxy lsit " + string(proxyType))
-	result := []ProxyService{}
-	return result, nil
+func (p ProxyService) getProxyList(proxyType enums.ProxyType) ([]models.ProxyItem, error) {
+	var proxyList []models.ProxyItem
+	fmt.Println("query proxy service " + string(proxyType))
+	err := p.client.Get(context.Background(), "/api/proxy/list?type="+string(proxyType), &proxyList)
+	return proxyList, err
 }
 
-func checkCmd() bool {
+func (p ProxyService) handlerCmd() bool {
 	// 没有参数打印help
 	if len(os.Args) == 1 {
 		help.PrintHelp()
 		return true
 	}
+	// 获取加速地址
+	var list []models.ProxyItem
+	var err error
 
-	firstArg := os.Args[1]
+	firstArg := strings.ToLower(os.Args[1])
 	flag := false
+	docker_flag := false
 	switch firstArg {
+	case "docker":
+		docker_flag = true
+		flag = true
+		fallthrough
+	case "docker-compose":
+		flag = true
+		fallthrough
+	case "docker compose":
+		flag = true
+		list, err = p.getProxyList(enums.ServiceDocker)
+		if err != nil {
+			fmt.Printf("get proxy service error! \n %s", err)
+			return true
+		}
+		DockerProxy(list, docker_flag)
+	case "git":
+		list, err = p.getProxyList(enums.ServiceGit)
+		if err != nil {
+			fmt.Printf("get proxy service error! \n %s", err)
+			return true
+		}
+		GitProxy(list)
+	case "-v":
+		fallthrough
+	case "-version":
+		fallthrough
 	case "v":
 		fmt.Println("")
 		fmt.Println("------------------------------------------------")
@@ -58,39 +90,9 @@ func checkCmd() bool {
 // 启动服务
 func (p ProxyService) Start() {
 
-	if checkCmd() {
+	if p.handlerCmd() {
 		return
+	} else {
+		fmt.Printf("the commond is not supported !\n")
 	}
-
-	if len(os.Args) < 2 {
-		fmt.Println("args lenght less than 2")
-		os.Exit(1)
-	}
-	// 保留 git 子命令
-	newArgs := []string{os.Args[1]}
-	supportCmd := []string{"clone", "pull", "fetch"}
-
-	found := false
-	for _, s := range supportCmd {
-		if s == newArgs[0] {
-			found = true
-			break
-		}
-	}
-	if !found {
-		fmt.Printf("not support command %s", newArgs[0])
-		fmt.Printf("supported command %s", strings.Join(supportCmd, ", "))
-		os.Exit(1)
-	}
-	for _, arg := range os.Args[2:] {
-		if strings.HasPrefix(arg, "https://github.com/") ||
-			strings.HasPrefix(arg, "http://github.com/") {
-			arg = proxyPrefix + arg
-		}
-		newArgs = append(newArgs, arg)
-	}
-
-	cmd := exec.Command("git", newArgs...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	_ = cmd.Run()
 }
