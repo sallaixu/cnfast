@@ -50,10 +50,8 @@ func (p ProxyService) handlerCmd() bool {
 	switch firstArg {
 	case "docker":
 		docker_flag = true
-		flag = true
 		fallthrough
 	case "docker-compose":
-		flag = true
 		fallthrough
 	case "docker compose":
 		flag = true
@@ -64,6 +62,7 @@ func (p ProxyService) handlerCmd() bool {
 		}
 		DockerProxy(list, docker_flag)
 	case "git":
+		flag = true
 		list, err = p.getProxyList(enums.ServiceGit)
 		if err != nil {
 			fmt.Printf("get proxy service error! \n %s", err)
@@ -75,6 +74,7 @@ func (p ProxyService) handlerCmd() bool {
 	case "-version":
 		fallthrough
 	case "v":
+		flag = true
 		fmt.Println("")
 		fmt.Println("------------------------------------------------")
 		fmt.Println("cnfast: v1.0.0")

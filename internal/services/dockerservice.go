@@ -94,9 +94,9 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 	// 构建新的参数列表
 	newArgs := []string{command}
-	for _, arg := range os.Args[3:] {
+	for idx, arg := range os.Args[3:] {
 		// 如果是镜像参数，进行替换加速
-		if isImageArgument(arg) {
+		if idx == 0 {
 			acceleratedImage := replaceImageWithSpecificDomain(arg)
 			fmt.Printf("accelerate image: %s -> %s\n", arg, acceleratedImage)
 			arg = acceleratedImage
@@ -140,61 +140,20 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 }
 
-// isImageArgument 判断参数是否是镜像名称
-func isImageArgument(arg string) bool {
-	// 简单的启发式判断：不以-开头，包含/或:，且不是文件路径
-	if strings.HasPrefix(arg, "-") {
-		return false
-	}
-
-	// 排除明显的文件路径和URL参数
-	if strings.Contains(arg, "./") || strings.Contains(arg, "../") ||
-		strings.Contains(arg, "://") || strings.Contains(arg, "?") ||
-		strings.Contains(arg, "&") || strings.Contains(arg, "=") {
-		return false
-	}
-
-	// 包含常见的镜像特征：有/或:，或者是常见的镜像名称
-	if strings.Contains(arg, "/") || strings.Contains(arg, ":") {
-		return true
-	}
-
-	// 检查是否是常见的官方镜像名称
-	commonImages := []string{
-		"ubuntu", "alpine", "centos", "debian", "fedora",
-		"nginx", "redis", "mysql", "postgres", "node",
-		"python", "golang", "java", "busybox", "hello-world",
-	}
-	for _, img := range commonImages {
-		if arg == img {
-			return true
-		}
-	}
-
-	return false
-}
-
 // replaceImageWithSpecificDomain 根据映射表替换镜像域名
 func replaceImageWithSpecificDomain(raw string) string {
 	// 检查每个需要加速的域名
-	for registry, accelDomain := range registryToAccelDomain {
-		if strings.HasPrefix(raw, registry+"/") {
-			// 替换域名部分
-			return accelDomain + "/" + strings.TrimPrefix(raw, registry+"/")
+	splits := strings.SplitN(raw, "/", 2)
+	if len(splits) == 1 {
+		raw = baseAccelDomain + "/" + raw
+	} else {
+		val, ok := registryToAccelDomain[splits[0]]
+		if ok {
+			raw = val + "/" + splits[1]
+		} else {
+			raw = val + "/" + raw
 		}
 	}
-
-	// 处理没有域名的官方镜像（如ubuntu, alpine等）
-	if !strings.Contains(raw, "/") && !strings.Contains(raw, ":") {
-		// 使用docker.io的加速域名
-		return registryToAccelDomain["docker.io"] + "/library/" + raw
-	}
-
-	// 处理library/前缀的镜像（docker.io官方镜像的简写形式）
-	if strings.HasPrefix(raw, "library/") {
-		return registryToAccelDomain["docker.io"] + "/" + raw
-	}
-
 	// 不需要加速的镜像原样返回
 	return raw
 }

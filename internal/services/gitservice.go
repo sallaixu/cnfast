@@ -29,10 +29,10 @@ func GitProxy(proxyList []models.ProxyItem) {
 	}
 
 	// 获取代理地址
-
 	fmt.Printf("use max score proxy: %s\n", proxyList[0].ProxyUrl)
 	proxyPrefix = proxyList[0].ProxyUrl
 	proxyHost := extractHost(proxyPrefix)
+	fmt.Println(proxyHost)
 	// 保留 git 子命令
 	newArgs := []string{}
 	supportCmd := []string{"clone", "pull", "fetch"}
@@ -71,9 +71,9 @@ func GitProxy(proxyList []models.ProxyItem) {
 		for sc.Scan() {
 			line := sc.Text()
 			// 过滤掉含代理 host 的行
-			if strings.Contains(line, proxyHost) {
-				continue
-			}
+			// if strings.Contains(line, proxyHost) {
+			// 	continue
+			// }
 			fmt.Fprintln(os.Stderr, line)
 		}
 	}()
