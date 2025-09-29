@@ -6,7 +6,7 @@
 set -e  # 遇到错误立即退出
 
 # 定义变量
-BASE_URL="https://gitee.com/sallai/cnfast/raw/main/build"
+BASE_URL="https://gitee.com/sallai/cnfast/releases/download/latest"
 INSTALL_DIR="/usr/local/bin"
 BINARY_NAME="cnfast"
 
@@ -59,7 +59,7 @@ case $ARCH in
 esac
 
 # 构建下载URL
-DOWNLOAD_URL="${BASE_URL}/${OS_PREFIX}-${ARCH_SUFFIX}/${BINARY_NAME}"
+DOWNLOAD_URL="${BASE_URL}/${BINARY_NAME}-${OS_PREFIX}-${ARCH_SUFFIX}"
 echo "下载地址: $DOWNLOAD_URL"
 
 # 创建临时目录
