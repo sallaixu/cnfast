@@ -22,8 +22,10 @@ type ProxyService struct {
 // CreateProxyService 创建代理服务实例
 // baseURL: API 服务器的基础地址
 func CreateProxyService(baseURL string) *ProxyService {
+	client := httpclient.New(baseURL)
+	client.SetEncryption(config.AESKey, config.AESIV)
 	return &ProxyService{
-		client: httpclient.New(baseURL),
+		client: client,
 	}
 }
 

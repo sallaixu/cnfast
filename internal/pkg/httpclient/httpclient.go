@@ -5,6 +5,9 @@ package httpclient
 import (
 	"bytes"
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -55,6 +58,12 @@ type Client struct {
 
 	// headers 公共请求头
 	headers map[string]string
+
+	// aesKey AES 加密密钥（用于解密响应数据）
+	aesKey string
+
+	// aesIV AES 初始化向量
+	aesIV string
 }
 
 // New 创建新的 HTTP 客户端实例
@@ -74,6 +83,83 @@ func New(baseURL string) *Client {
 // value: 头部值
 func (c *Client) SetHeader(key, value string) {
 	c.headers[key] = value
+}
+
+// SetEncryption 设置 AES 加密参数
+// key: AES 密钥（32字节用于AES-256）
+// iv: 初始化向量（16字节）
+func (c *Client) SetEncryption(key, iv string) {
+	c.aesKey = key
+	c.aesIV = iv
+}
+
+/* ---------- 解密相关方法 ---------- */
+
+// aesDecrypt AES-CBC 解密方法
+// encryptedData: Base64 编码的加密数据
+// 返回: 解密后的字符串和可能的错误
+func (c *Client) aesDecrypt(encryptedData string) (string, error) {
+	// 1. Base64 解码
+	decoded, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return "", fmt.Errorf("base64 解码失败: %w", err)
+	}
+
+	// 2. 创建 AES 密码块
+	block, err := aes.NewCipher([]byte(c.aesKey))
+	if err != nil {
+		return "", fmt.Errorf("创建 AES 密码块失败: %w", err)
+	}
+
+	// 3. 检查数据长度是否合法
+	if len(decoded) < aes.BlockSize {
+		return "", fmt.Errorf("密文长度不足")
+	}
+
+	// 4. CBC 模式解密
+	mode := cipher.NewCBCDecrypter(block, []byte(c.aesIV))
+	decrypted := make([]byte, len(decoded))
+	mode.CryptBlocks(decrypted, decoded)
+
+	// 5. 去除 PKCS5/PKCS7 填充
+	decrypted = c.pkcs5Unpadding(decrypted)
+
+	return string(decrypted), nil
+}
+
+// pkcs5Unpadding 去除 PKCS5/PKCS7 填充
+// data: 带填充的数据
+// 返回: 去除填充后的数据
+func (c *Client) pkcs5Unpadding(data []byte) []byte {
+	length := len(data)
+	if length == 0 {
+		return data
+	}
+	unpadding := int(data[length-1])
+	if unpadding > length {
+		return data
+	}
+	return data[:(length - unpadding)]
+}
+
+// decryptDataField 解密响应数据中的 Data 字段
+// data: 可能是加密字符串的 interface{}
+// 返回: 解密后的字节数组和可能的错误
+func (c *Client) decryptDataField(data interface{}) ([]byte, error) {
+	// 检查 Data 字段是否为字符串（加密数据）
+	dataStr, ok := data.(string)
+	if !ok {
+		// 如果不是字符串，说明未加密，直接序列化返回
+		return json.Marshal(data)
+	}
+
+	// 解密 Data 字段
+	decryptedJSON, err := c.aesDecrypt(dataStr)
+	if err != nil {
+		return nil, fmt.Errorf("解密 Data 字段失败: %w", err)
+	}
+
+	return []byte(decryptedJSON), nil
 }
 
 /* ---------- 内部：统一请求 & 解析 ---------- */
@@ -134,7 +220,23 @@ func (c *Client) doRequest(ctx context.Context, method, endpoint string, body in
 		if response.Data == nil {
 			return nil, nil
 		}
-		// 重新序列化 data 段返回
+
+		// 8. 检查是否需要解密
+		// 如果配置了加密密钥，且 Data 是字符串类型（可能是加密数据），则尝试解密
+		if c.aesKey != "" && c.aesIV != "" {
+			// 检查 Data 是否为字符串类型（加密数据的特征）
+			if dataStr, ok := response.Data.(string); ok {
+				// Data 是字符串，尝试解密
+				decrypted, err := c.decryptDataField(dataStr)
+				if err == nil {
+					// 解密成功
+					return decrypted, nil
+				}
+				// 解密失败，可能不是加密数据，继续按原始数据处理
+			}
+		}
+
+		// 未配置密钥或 Data 不是字符串，直接序列化 data 段返回
 		return json.Marshal(response.Data)
 	default: // 业务错误
 		return nil, &BizError{Code: response.Code, Message: response.Message}

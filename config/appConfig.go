@@ -19,6 +19,11 @@ var (
 
 	// Version 应用程序版本
 	Version = "1.0.0"
+
+	// 加密参数
+	AESKey string
+
+	AESIV string
 )
 
 // getEnvOrDefault 获取环境变量，如果不存在则返回默认值
