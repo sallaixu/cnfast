@@ -8,6 +8,7 @@ import (
 	"cnfast/internal/models"
 	"cnfast/internal/pkg/util"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -48,6 +49,19 @@ func GitProxy(proxyList []models.ProxyItem) {
 	executeGitWithProxyRetry(proxyList, command)
 }
 
+// 在函数外部定义类型
+type flushingWriter struct {
+	dst io.Writer
+}
+
+func (w *flushingWriter) Write(p []byte) (n int, err error) {
+	n, err = w.dst.Write(p)
+	if f, ok := w.dst.(interface{ Flush() error }); ok {
+		f.Flush()
+	}
+	return n, err
+}
+
 // executeGitWithProxyRetry 执行 Git 命令，支持代理重试
 func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
 	// 按评分排序代理列表
@@ -66,25 +80,79 @@ func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
 		// 提取主机名
 		host := util.ExtractHostFromURL(proxy.ProxyUrl)
 		// 执行 Git 命令
-		cmd := exec.Command("git", newArgs...)
+		cmd := exec.Command("git", append(newArgs, "--progress")...)
 		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		// cmd.Stderr = os.Stderr
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
-		// 运行命令
-		err := cmd.Run()
-		if err == nil {
-			// 命令执行成功，直接返回
+		stdoutPipe, err := cmd.StdoutPipe()
+		if err != nil {
+			fmt.Printf("创建stdout管道失败: %v\n", err)
 			return
-		} else {
-			fmt.Printf("命令执行失败: %v\n", strings.ReplaceAll(stderr.String(), host, "***"))
 		}
-
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			fmt.Printf("创建stderr管道失败: %v\n", err)
+			return
+		}
+		var stdoutBuf, stderrBuf bytes.Buffer
+		// 启动命令
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("启动命令失败: %v\n", err)
+			return
+		}
+		// 实时读取stdout - 使用原始字节读取
+		go func() {
+			buf := make([]byte, 1024)
+			for {
+				n, err := stdoutPipe.Read(buf)
+				if n > 0 {
+					// 直接输出原始字节，保留控制字符
+					content := buf[:n]
+					// 替换敏感信息
+					processed := bytes.ReplaceAll(content, []byte(host), []byte("***"))
+					os.Stdout.Write(processed)
+					stdoutBuf.Write(content)
+				}
+				if err != nil {
+					if err != io.EOF {
+						fmt.Fprintf(os.Stderr, "读取stdout错误: %v\n", err)
+					}
+					break
+				}
+			}
+		}()
+		// 实时读取stderr - 使用原始字节读取
+		go func() {
+			buf := make([]byte, 1024)
+			for {
+				n, err := stderrPipe.Read(buf)
+				if n > 0 {
+					// 直接输出原始字节，保留控制字符
+					content := buf[:n]
+					// 替换敏感信息
+					processed := bytes.ReplaceAll(content, []byte(host), []byte("***"))
+					os.Stderr.Write(processed)
+					stderrBuf.Write(content)
+				}
+				if err != nil {
+					if err != io.EOF {
+						fmt.Fprintf(os.Stderr, "读取stderr错误: %v\n", err)
+					}
+					break
+				}
+			}
+		}()
+		// 等待命令完成
+		err = cmd.Wait()
+		if err == nil {
+			fmt.Printf("✅ 代理 %s 执行成功\n", proxy.ID)
+			return
+		}
+		// 	// 命令真正失败时才输出错误
+		// 	fmt.Printf("命令执行失败: %v\n", strings.ReplaceAll(stderrBuf.String(), host, "***"))
+		// } else {
+		// 	fmt.Printf("✅ 命令执行成功\n")
+		// }
 		// 命令执行失败，检查是否还有更多代理可以尝试
 		if i < len(sortedProxies)-1 {
-			fmt.Fprintf(os.Stderr, "\n❌ 代理 %s 执行失败: %v\n", proxy.GetDisplayName(), err)
-
 			// 询问用户是否尝试下一个代理
 			if askUserToRetry() {
 				fmt.Printf("\n🔄 尝试下一个代理...\n\n")
@@ -138,8 +206,7 @@ func sortProxiesByScore(proxyList []models.ProxyItem) []models.ProxyItem {
 
 // askUserToRetry 询问用户是否重试
 func askUserToRetry() bool {
-	fmt.Println("请根据错误信息判断是否是代理失效导致。代理问题可尝试使用其他代理")
-	fmt.Print("是否尝试使用其他代理？(y/n): ")
+	fmt.Print("\n❌是否尝试使用其他代理？(仅代理问题需要)(y/n): ")
 	reader := bufio.NewReader(os.Stdin)
 	response, _ := reader.ReadString('\n')
 	response = strings.TrimSpace(strings.ToLower(response))
