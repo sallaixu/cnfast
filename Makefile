@@ -9,8 +9,8 @@ GO_PACKAGE := .
 -include .env
 # 构建 LDFLAGS
 LDFLAGS := -s -w \
-	-X cnfast/config/appConfig.AESKEY=$(AESKEY) \
-	-X cnfast/config/appConfig.AESIV=$(AESIV)
+	-X cnfast/config.AESKEY=$(AESKEY) \
+	-X cnfast/config.AESIV=$(AESIV)
 
 # 定义平台架构组合
 PLATFORMS := linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64

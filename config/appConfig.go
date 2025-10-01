@@ -21,7 +21,7 @@ var (
 	Version = "1.0.0"
 
 	// 加密参数
-	AESKey string
+	AESKEY string
 
 	AESIV string
 )
