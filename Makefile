@@ -6,6 +6,12 @@ VERSION := 1.0.0
 BUILD_DIR := build
 GO_PACKAGE := .
 
+-include .env
+# 构建 LDFLAGS
+LDFLAGS := -s -w \
+	-X cnfast/config/appConfig.AESKEY=$(AESKEY) \
+	-X cnfast/config/appConfig.AESIV=$(AESIV)
+
 # 定义平台架构组合
 PLATFORMS := linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64
 
@@ -27,10 +33,10 @@ $(PLATFORMS):
 	@mkdir -p $(BUILD_DIR)/$(OS)-$(ARCH)
 	
 	@if [ "$(OS)" = "windows" ]; then \
-		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe -ldflags="-s -w" $(GO_PACKAGE); \
+		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe -ldflags="$(LDFLAGS)"  $(GO_PACKAGE); \
 		echo "Built: $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME).exe"; \
 	else \
-		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME) -ldflags="-s -w" $(GO_PACKAGE); \
+		CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -o $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME) -ldflags="$(LDFLAGS)"  $(GO_PACKAGE); \
 		echo "Built: $(BUILD_DIR)/$(OS)-$(ARCH)/$(APP_NAME)"; \
 	fi
 
