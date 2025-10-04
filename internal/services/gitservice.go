@@ -2,13 +2,10 @@
 package services
 
 import (
-	"bufio"
-	"bytes"
 	"cnfast/config"
 	"cnfast/internal/models"
 	"cnfast/internal/pkg/util"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"regexp"
@@ -35,7 +32,7 @@ func GitProxy(proxyList []models.ProxyItem) {
 	}
 
 	// 支持的命令列表
-	supportedCommands := []string{"clone", "pull", "fetch", "push"}
+	supportedCommands := []string{"clone", "pull", "down"}
 	command := os.Args[2]
 
 	// 检查命令是否支持
@@ -45,128 +42,35 @@ func GitProxy(proxyList []models.ProxyItem) {
 		os.Exit(1)
 	}
 
+	// 处理 down 命令特殊逻辑
+	if command == "down" {
+		executeDownloadWithProxyRetry(proxyList)
+		return
+	}
+
 	// 尝试执行 Git 命令，支持代理重试
 	executeGitWithProxyRetry(proxyList, command)
 }
 
-// 在函数外部定义类型
-type flushingWriter struct {
-	dst io.Writer
-}
-
-func (w *flushingWriter) Write(p []byte) (n int, err error) {
-	n, err = w.dst.Write(p)
-	if f, ok := w.dst.(interface{ Flush() error }); ok {
-		f.Flush()
-	}
-	return n, err
-}
-
 // executeGitWithProxyRetry 执行 Git 命令，支持代理重试
 func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
-	// 按评分排序代理列表
-	sortedProxies := sortProxiesByScore(proxyList)
-
-	// 尝试每个代理
-	for i, proxy := range sortedProxies {
-		fmt.Printf("使用代理: %s (评分: %d)\n", proxy.GetDisplayName(), proxy.Score)
-
+	// 使用通用的代理重试框架
+	ExecuteWithProxyRetry(proxyList, func(proxy models.ProxyItem) (*exec.Cmd, string, error) {
 		// 构建加速后的参数
 		newArgs := buildGitArgs(proxy.ProxyUrl, command)
 
 		if config.Debug {
 			fmt.Printf("执行命令: git %s\n", strings.Join(newArgs, " "))
 		}
-		// 提取主机名
+
+		// 提取主机名（用于隐藏敏感信息）
 		host := util.ExtractHostFromURL(proxy.ProxyUrl)
+
 		// 执行 Git 命令
 		cmd := exec.Command("git", append(newArgs, "--progress")...)
-		cmd.Stdin = os.Stdin
-		stdoutPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			fmt.Printf("创建stdout管道失败: %v\n", err)
-			return
-		}
-		stderrPipe, err := cmd.StderrPipe()
-		if err != nil {
-			fmt.Printf("创建stderr管道失败: %v\n", err)
-			return
-		}
-		var stdoutBuf, stderrBuf bytes.Buffer
-		// 启动命令
-		if err := cmd.Start(); err != nil {
-			fmt.Printf("启动命令失败: %v\n", err)
-			return
-		}
-		// 实时读取stdout - 使用原始字节读取
-		go func() {
-			buf := make([]byte, 1024)
-			for {
-				n, err := stdoutPipe.Read(buf)
-				if n > 0 {
-					// 直接输出原始字节，保留控制字符
-					content := buf[:n]
-					// 替换敏感信息
-					processed := bytes.ReplaceAll(content, []byte(host), []byte("***"))
-					os.Stdout.Write(processed)
-					stdoutBuf.Write(content)
-				}
-				if err != nil {
-					if err != io.EOF {
-						fmt.Fprintf(os.Stderr, "读取stdout错误: %v\n", err)
-					}
-					break
-				}
-			}
-		}()
-		// 实时读取stderr - 使用原始字节读取
-		go func() {
-			buf := make([]byte, 1024)
-			for {
-				n, err := stderrPipe.Read(buf)
-				if n > 0 {
-					// 直接输出原始字节，保留控制字符
-					content := buf[:n]
-					// 替换敏感信息
-					processed := bytes.ReplaceAll(content, []byte(host), []byte("***"))
-					os.Stderr.Write(processed)
-					stderrBuf.Write(content)
-				}
-				if err != nil {
-					if err != io.EOF {
-						fmt.Fprintf(os.Stderr, "读取stderr错误: %v\n", err)
-					}
-					break
-				}
-			}
-		}()
-		// 等待命令完成
-		err = cmd.Wait()
-		if err == nil {
-			fmt.Printf("✅ 代理 %s 执行成功\n", proxy.ID)
-			return
-		}
-		// 	// 命令真正失败时才输出错误
-		// 	fmt.Printf("命令执行失败: %v\n", strings.ReplaceAll(stderrBuf.String(), host, "***"))
-		// } else {
-		// 	fmt.Printf("✅ 命令执行成功\n")
-		// }
-		// 命令执行失败，检查是否还有更多代理可以尝试
-		if i < len(sortedProxies)-1 {
-			// 询问用户是否尝试下一个代理
-			if askUserToRetry() {
-				fmt.Printf("\n🔄 尝试下一个代理...\n\n")
-				continue
-			} else {
-				fmt.Println("用户取消操作")
-				os.Exit(1)
-			}
-		} else {
-			// 所有代理都失败了
-			fmt.Fprintf(os.Stderr, "\n❌ 所有代理都执行失败，最后一个错误: %v\n", err)
-			os.Exit(1)
-		}
-	}
+
+		return cmd, host, nil
+	}, "执行")
 }
 
 // buildGitArgs 构建 Git 命令参数
@@ -186,35 +90,74 @@ func buildGitArgs(proxyUrl, command string) []string {
 	return newArgs
 }
 
-// sortProxiesByScore 按评分排序代理列表
-func sortProxiesByScore(proxyList []models.ProxyItem) []models.ProxyItem {
-	// 创建副本避免修改原列表
-	sorted := make([]models.ProxyItem, len(proxyList))
-	copy(sorted, proxyList)
-
-	// 简单的冒泡排序，按评分降序排列
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := 0; j < len(sorted)-i-1; j++ {
-			if sorted[j].Score < sorted[j+1].Score {
-				sorted[j], sorted[j+1] = sorted[j+1], sorted[j]
-			}
-		}
-	}
-
-	return sorted
-}
-
-// askUserToRetry 询问用户是否重试
-func askUserToRetry() bool {
-	fmt.Print("\n❌是否尝试使用其他代理？(仅代理问题需要)(y/n): ")
-	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
-	response = strings.TrimSpace(strings.ToLower(response))
-	return response == "y" || response == "yes"
-}
-
 // isGitHubURL 检查 URL 是否为 GitHub URL
 func isGitHubURL(url string) bool {
 	return strings.HasPrefix(url, "https://github.com/") ||
 		strings.HasPrefix(url, "http://github.com/")
+}
+
+// executeDownloadWithProxyRetry 使用代理下载文件，支持重试
+func executeDownloadWithProxyRetry(proxyList []models.ProxyItem) {
+	// 检查下载 URL 参数
+	if len(os.Args) < 4 {
+		fmt.Fprintf(os.Stderr, "错误: 缺少下载链接地址\n")
+		fmt.Fprintf(os.Stderr, "用法: cnfast git down <下载链接地址> [输出文件名]\n")
+		os.Exit(1)
+	}
+
+	downloadURL := os.Args[3]
+
+	// 检查是否为 GitHub URL
+	if !isGitHubURL(downloadURL) {
+		fmt.Fprintf(os.Stderr, "错误: 仅支持 GitHub 链接下载\n")
+		fmt.Fprintf(os.Stderr, "链接格式: https://github.com/...\n")
+		os.Exit(1)
+	}
+
+	// 使用通用的代理重试框架
+	ExecuteWithProxyRetry(proxyList, func(proxy models.ProxyItem) (*exec.Cmd, string, error) {
+		// 构建代理后的下载地址
+		proxiedURL := proxy.ProxyUrl + "/" + downloadURL
+
+		if config.Debug {
+			fmt.Printf("下载地址: %s\n", proxiedURL)
+		}
+
+		// 提取主机名用于隐藏敏感信息
+		host := util.ExtractHostFromURL(proxy.ProxyUrl)
+
+		// 构建 curl 命令参数
+		curlArgs := []string{
+			"-L",             // 跟随重定向
+			"--progress-bar", // 显示进度条
+			"-O",             // 使用远程文件名
+			proxiedURL,
+		}
+
+		// 如果用户指定了输出文件名
+		if len(os.Args) >= 5 {
+			outputFile := os.Args[4]
+			curlArgs = []string{
+				"-L",
+				"--progress-bar",
+				"-o", outputFile,
+				proxiedURL,
+			}
+		}
+
+		if config.Debug {
+			// 隐藏敏感信息的命令显示
+			safeArgs := make([]string, len(curlArgs))
+			copy(safeArgs, curlArgs)
+			for j, arg := range safeArgs {
+				safeArgs[j] = strings.ReplaceAll(arg, host, "***")
+			}
+			fmt.Printf("执行命令: curl %s\n", strings.Join(safeArgs, " "))
+		}
+
+		// 执行 curl 命令
+		cmd := exec.Command("curl", curlArgs...)
+
+		return cmd, host, nil
+	}, "下载")
 }
