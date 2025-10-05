@@ -1,15 +1,15 @@
-# cnfast Windows 一键安装脚本
-# PowerShell 脚本，支持 Windows 10/11
+# cnfast Windows Installer
+# PowerShell script for Windows 10/11
 
-# 设置控制台编码为 UTF-8（关键：解决中文乱码）
+# Set console encoding to UTF-8
 $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
 $OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-# 设置错误处理
+# Error handling
 $ErrorActionPreference = "Stop"
 
-# 定义变量
+# Variables
 $BaseUrl = "https://gitee.com/sallai/cnfast/releases/download/latest"
 $BinaryName = "cnfast.exe"
 $InstallDir = "$env:LOCALAPPDATA\cnfast"
@@ -20,7 +20,7 @@ Write-Host "     cnfast Windows Installer" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# [1/5] Detect architecture
+# [1/5] Detect system architecture
 Write-Host "[1/5] Detecting system architecture..." -ForegroundColor Yellow
 $Arch = $env:PROCESSOR_ARCHITECTURE
 $ArchSuffix = ""
@@ -44,12 +44,12 @@ switch ($Arch) {
     }
 }
 
-# 构建下载URL
+# Build download URL
 $DownloadUrl = "$BaseUrl/cnfast-windows-$ArchSuffix.exe"
 Write-Host "      URL: $DownloadUrl" -ForegroundColor Cyan
 Write-Host ""
 
-# 创建临时文件路径
+# Create temp file path
 $TmpFile = Join-Path $env:TEMP "cnfast_$(Get-Random).exe"
 
 try {
@@ -204,7 +204,7 @@ catch {
     exit 1
 }
 finally {
-    # 清理临时文件
+    # Clean up temp files
     if (Test-Path $TmpFile) {
         Remove-Item -Path $TmpFile -Force -ErrorAction SilentlyContinue
     }
