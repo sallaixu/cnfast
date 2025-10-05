@@ -41,20 +41,26 @@ set "TMP_FILE=%TEMP%\cnfast_%RANDOM%.exe"
 
 REM Download file
 echo [2/5] Downloading cnfast...
-echo       Please wait, this may take a few minutes...
 echo.
 
-REM Use PowerShell to download
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $ProgressPreference = 'SilentlyContinue'; try { Invoke-WebRequest -Uri '%DOWNLOAD_URL%' -OutFile '%TMP_FILE%' -UseBasicParsing; Write-Host '       Download completed!' -ForegroundColor Green } catch { Write-Host '       Download failed' -ForegroundColor Red; exit 1 }"
+REM Use PowerShell BitsTransfer or curl for progress
+where /q bitsadmin
+if %errorlevel% equ 0 (
+    echo       Using BitsTransfer for download with progress...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Import-Module BitsTransfer; Start-BitsTransfer -Source '%DOWNLOAD_URL%' -Destination '%TMP_FILE%' -DisplayName 'Downloading cnfast' -Description 'Please wait...'; Write-Host '       Download completed!' -ForegroundColor Green"
+) else (
+    echo       Downloading... Please wait...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $wc = New-Object System.Net.WebClient; $wc.DownloadFile('%DOWNLOAD_URL%', '%TMP_FILE%'); Write-Host '       Download completed!' -ForegroundColor Green"
+)
 
 if errorlevel 1 (
-    echo       Error: Download failed, please check your network connection
+    echo       错误：下载失败，请检查你的网络连接
     exit /b 1
 )
 
 REM Check file exists
 if not exist "%TMP_FILE%" (
-    echo       Error: Download failed, file does not exist
+    echo       错误：下载失败，文件不存在
     exit /b 1
 )
 
@@ -70,8 +76,8 @@ REM Delete old version if exists
 if exist "%INSTALL_DIR%\%BINARY_NAME%" (
     del /f /q "%INSTALL_DIR%\%BINARY_NAME%" 2>nul
     if errorlevel 1 (
-        echo       Warning: Cannot delete old version, may be in use
-        echo       Please close all cnfast processes and try again
+        echo       警告：无法删除旧版本，可能正在使用
+        echo       请关闭所有cnfast进程后重试
         del /f /q "%TMP_FILE%" 2>nul
         exit /b 1
     )
@@ -81,15 +87,15 @@ REM Move file to install directory
 move /y "%TMP_FILE%" "%INSTALL_DIR%\%BINARY_NAME%" >nul
 
 if errorlevel 1 (
-    echo       Error: Installation failed
+    echo       错误：安装失败
     exit /b 1
 )
 
-echo       Installation completed!
+echo       安装完成！
 echo.
 
 REM Add to PATH
-echo [4/5] Configuring environment variables...
+echo [4/5] 配置环境变量中....
 echo.
 
 REM Use PowerShell to add to user PATH
@@ -97,7 +103,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "$userPath = [Environment
 
 echo.
 echo ================================================
-echo      Installation Successful!
+echo      安装
 echo ================================================
 echo.
 echo Install location: %INSTALL_DIR%\%BINARY_NAME%
@@ -110,14 +116,14 @@ REM Verify installation
 echo [5/5] Verifying installation...
 "%INSTALL_DIR%\%BINARY_NAME%" --version 2>nul
 if errorlevel 1 (
-    echo       Please restart terminal to use cnfast command
+    echo       提示：如果无法使用cnfast命令，请重新打开终端
 ) else (
     echo.
-    echo       Installation verified successfully!
+    echo       安装验证成功！
 )
 
 echo.
-echo To uninstall, delete directory: %INSTALL_DIR%
+echo 卸载请删除此目录文件即可: %INSTALL_DIR%
 echo.
 
 pause
