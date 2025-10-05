@@ -53,8 +53,13 @@ Write-Host ""
 $TmpFile = Join-Path $env:TEMP "cnfast_$(Get-Random).exe"
 
 try {
+<<<<<<< HEAD
     # [2/5] Download cnfast
     Write-Host "[2/5] Downloading cnfast..." -ForegroundColor Yellow
+=======
+    # [2/5] 下载 cnfast
+    Write-Host "[2/5] 下载 cnfast..." -ForegroundColor Yellow
+>>>>>>> 026c0ee3c6352f55f64e5acb302d225e93378d4b
     Write-Host ""
     
     # Set TLS 1.2
@@ -149,8 +154,13 @@ try {
     Write-Host "      Location: $TargetFile" -ForegroundColor Cyan
     Write-Host ""
     
+<<<<<<< HEAD
     # [4/5] Configure PATH
     Write-Host "[4/5] Configuring environment variables..." -ForegroundColor Yellow
+=======
+    # [4/5] 配置环境变量
+    Write-Host "[4/5] 配置环境变量..." -ForegroundColor Yellow
+>>>>>>> 026c0ee3c6352f55f64e5acb302d225e93378d4b
     
     # Get user PATH
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -165,8 +175,13 @@ try {
         $env:Path = $env:Path + ";" + $InstallDir
         
         Write-Host ""
+<<<<<<< HEAD
         Write-Host "      Note: If command not found," -ForegroundColor Yellow
         Write-Host "            please restart your terminal" -ForegroundColor Yellow
+=======
+        Write-Host "      提示: 如果当前终端无法使用 cnfast 命令，" -ForegroundColor Yellow
+        Write-Host "            请重新打开一个新的终端窗口" -ForegroundColor Yellow
+>>>>>>> 026c0ee3c6352f55f64e5acb302d225e93378d4b
     }
     else {
         Write-Host "      Already in PATH" -ForegroundColor Green
