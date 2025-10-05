@@ -1,6 +1,11 @@
 # cnfast Windows 一键安装脚本
 # PowerShell 脚本，支持 Windows 10/11
 
+# 设置控制台编码为 UTF-8（关键：解决中文乱码）
+$PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'
+$OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 # 设置错误处理
 $ErrorActionPreference = "Stop"
 
@@ -48,7 +53,7 @@ Write-Host ""
 $TmpFile = Join-Path $env:TEMP "cnfast_$(Get-Random).exe"
 
 try {
-    # [2/5] 下载 cnfast 二进制文件
+    # [2/5] 下载 cnfast
     Write-Host "[2/5] 下载 cnfast..." -ForegroundColor Yellow
     Write-Host ""
     
@@ -144,7 +149,7 @@ try {
     Write-Host "      位置: $TargetFile" -ForegroundColor Cyan
     Write-Host ""
     
-    # [4/5] 添加到 PATH 环境变量
+    # [4/5] 配置环境变量
     Write-Host "[4/5] 配置环境变量..." -ForegroundColor Yellow
     
     # 获取当前用户的 PATH
@@ -160,7 +165,7 @@ try {
         $env:Path = $env:Path + ";" + $InstallDir
         
         Write-Host ""
-        Write-Host "      注意: 如果在当前终端无法使用 cnfast 命令，" -ForegroundColor Yellow
+        Write-Host "      提示: 如果当前终端无法使用 cnfast 命令，" -ForegroundColor Yellow
         Write-Host "            请重新打开一个新的终端窗口" -ForegroundColor Yellow
     }
     else {
