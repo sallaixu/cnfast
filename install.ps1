@@ -55,8 +55,6 @@ $TmpFile = Join-Path $env:TEMP "cnfast_$(Get-Random).exe"
 try {
     # [2/5] Download cnfast
     Write-Host "[2/5] Downloading cnfast..." -ForegroundColor Yellow
-    Write-Host ""
-    
     # Set TLS 1.2
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     
