@@ -107,12 +107,18 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 	// 构建新的参数列表
 	newArgs := []string{command}
+	var originalImage string    // 原始镜像名
+	var acceleratedImage string // 加速后的镜像名
+	var needRetagging bool      // 是否需要重新打标签
+
 	for idx, arg := range os.Args[3:] {
 		// 如果是镜像参数，进行加速替换
 		if idx == 0 && (command == "pull" || command == "push") {
-			acceleratedImage := replaceImageWithSpecificDomain(arg)
-			if acceleratedImage != arg {
-				fmt.Printf("镜像加速: %s -> %s\n", arg, acceleratedImage)
+			originalImage = arg
+			acceleratedImage = replaceImageWithSpecificDomain(arg)
+			if acceleratedImage != originalImage {
+				fmt.Printf("镜像加速: %s -> %s\n", originalImage, acceleratedImage)
+				needRetagging = (command == "pull") // 只有 pull 命令需要重新打标签
 			}
 			arg = acceleratedImage
 		}
@@ -133,6 +139,11 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "命令执行失败: %v\n", err)
 		os.Exit(1)
+	}
+
+	// 如果是 pull 命令且使用了加速，需要重新打标签
+	if needRetagging {
+		retagImage(acceleratedImage, originalImage)
 	}
 }
 
@@ -179,6 +190,37 @@ func replaceImageWithSpecificDomain(raw string) string {
 
 	// 不需要加速的镜像原样返回
 	return raw
+}
+
+// retagImage 将加速域名的镜像重新打标签为原始名称
+// acceleratedImage: 带加速域名的镜像名
+// originalImage: 原始镜像名
+func retagImage(acceleratedImage, originalImage string) {
+	// 1. 使用原始名称重新打标签
+	tagCmd := exec.Command("docker", "tag", acceleratedImage, originalImage)
+	tagCmd.Stdout = os.Stdout
+	tagCmd.Stderr = os.Stderr
+
+	if err := tagCmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "警告: 重新打标签失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "镜像仍然可用，但标签为: %s\n", acceleratedImage)
+		return
+	}
+
+	// 2. 删除加速域名的标签（清理临时标签）
+	rmiCmd := exec.Command("docker", "rmi", acceleratedImage)
+	// 不显示删除输出，保持界面简洁
+	if config.Debug {
+		rmiCmd.Stdout = os.Stdout
+		rmiCmd.Stderr = os.Stderr
+	}
+
+	if err := rmiCmd.Run(); err != nil {
+		if config.Debug {
+			fmt.Fprintf(os.Stderr, "警告: 删除旧标签失败: %v\n", err)
+		}
+		// 忽略删除失败，因为不影响镜像使用
+	}
 }
 
 // DockerComposeProxy 处理 docker-compose 命令的代理
