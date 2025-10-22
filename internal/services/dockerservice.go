@@ -183,13 +183,15 @@ func replaceImageWithSpecificDomain(raw string) string {
 		return baseAccelDomain + "/" + raw
 	}
 
-	// 检查是否需要加速
+	// 检查第一部分是否是已知的 registry 域名
 	if accelDomain, exists := registryToAccelDomain[splits[0]]; exists {
 		return accelDomain + "/" + splits[1]
 	}
 
-	// 不需要加速的镜像原样返回
-	return raw
+	// 如果第一部分不是已知的 registry 域名，但有斜杠分隔，
+	// 说明这是 Docker Hub 上的镜像（如 homeassistant/home-assistant:stable）
+	// 应该使用默认加速域名
+	return baseAccelDomain + "/" + raw
 }
 
 // retagImage 将加速域名的镜像重新打标签为原始名称
