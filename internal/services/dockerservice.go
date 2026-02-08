@@ -4,10 +4,16 @@ package services
 import (
 	"cnfast/config"
 	"cnfast/internal/models"
+
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
+	"strconv"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Docker 镜像加速配置
@@ -225,9 +231,192 @@ func retagImage(acceleratedImage, originalImage string) {
 	}
 }
 
+// runComposeConfig 尝试兼容 docker compose 与 docker-compose 两种命令
+// 返回命令输出（YAML 字节）和错误
+func runComposeConfig(composeFile string) ([]byte, error) {
+	// 优先尝试 docker compose
+	cmd := exec.Command("docker", "compose", "-f", composeFile, "config")
+	cmd.Stdin = os.Stdin
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return output, nil
+	}
+
+	// 兼容旧版 docker-compose 二进制
+	cmd = exec.Command("docker-compose", "-f", composeFile, "config")
+	cmd.Stdin = os.Stdin
+	output2, err2 := cmd.CombinedOutput()
+	if err2 == nil {
+		return output2, nil
+	}
+
+	// 同时返回 docker compose 的错误，方便调试
+	return output, fmt.Errorf("docker compose 失败: %v; docker-compose 失败: %v", err, err2)
+}
+
 // DockerComposeProxy 处理 docker-compose 命令的代理
 // proxyList: 代理服务列表
 func DockerComposeProxy(proxyList []models.ProxyItem) {
-	// TODO: 实现 docker-compose 代理功能
-	fmt.Println("docker-compose 代理功能尚未实现")
+	if len(proxyList) == 0 {
+		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
+		os.Exit(1)
+	}
+
+	best := getBestProxy(proxyList)
+	if best == nil {
+		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
+		os.Exit(1)
+	}
+
+	fmt.Printf("使用代理: %s (评分: %d)\n", best.ProxyUrl, best.Score)
+	SetBaseAccelDomain(best.ProxyUrl)
+
+	// 只考虑单 compose 文件，在当前目录按常见命名查找
+	composeCandidates := []string{
+		"docker-compose.yml",
+		"docker-compose.yaml",
+		"compose.yml",
+		"compose.yaml",
+	}
+
+	var composeFile string
+	for _, f := range composeCandidates {
+		if _, err := os.Stat(f); err == nil {
+			composeFile = f
+			break
+		}
+	}
+
+	if composeFile == "" {
+		fmt.Fprintln(os.Stderr, "错误: 当前目录未找到 docker compose 配置文件 (docker-compose.yml|docker-compose.yaml|compose.yml|compose.yaml)")
+		os.Exit(1)
+	}
+
+	if config.Debug {
+		fmt.Printf("使用 compose 文件: %s\n", composeFile)
+	}
+
+	// 使用 docker compose/docker-compose CLI 解析配置为 YAML
+	output, err := runComposeConfig(composeFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误: 解析 docker compose 配置失败: %v\n", err)
+		fmt.Fprintf(os.Stderr, "命令输出:\n%s\n", string(output))
+		os.Exit(1)
+	}
+
+	// 解析 YAML，提取 services -> image 映射
+	type composeConfig struct {
+		Services map[string]struct {
+			Image string `yaml:"image"`
+		} `yaml:"services"`
+	}
+
+	var cfg composeConfig
+	if err := yaml.Unmarshal(output, &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "错误: 解析 docker compose YAML 失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 构建去重后的镜像列表，同时记录使用该镜像的 service 名称
+	type imageItem struct {
+		Image    string
+		Services []string
+	}
+
+	imageMap := make(map[string]*imageItem)
+
+	for svcName, svc := range cfg.Services {
+		if svc.Image == "" {
+			continue // 没有 image 的服务（例如仅 build）忽略
+		}
+		if item, ok := imageMap[svc.Image]; ok {
+			item.Services = append(item.Services, svcName)
+		} else {
+			imageMap[svc.Image] = &imageItem{
+				Image:    svc.Image,
+				Services: []string{svcName},
+			}
+		}
+	}
+
+	if len(imageMap) == 0 {
+		fmt.Println("未在 compose 配置中找到任何需要拉取的镜像")
+		return
+	}
+
+	images := make([]*imageItem, 0, len(imageMap))
+	for _, item := range imageMap {
+		images = append(images, item)
+	}
+
+	// 按镜像名排序，输出更稳定
+	sort.Slice(images, func(i, j int) bool {
+		return images[i].Image < images[j].Image
+	})
+
+	fmt.Println("发现以下镜像:")
+	for i, item := range images {
+		svcNames := strings.Join(item.Services, ", ")
+		fmt.Printf("%d) %-20s -> %s\n", i+1, svcNames, item.Image)
+	}
+
+	// 让用户选择要拉取的镜像，支持多选，默认全部
+	fmt.Print("请输入要拉取的镜像序号（多个用空格分隔，直接回车默认全部）: ")
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	line = strings.TrimSpace(line)
+
+	var indices []int
+	if line == "" {
+		// 默认全选
+		for i := range images {
+			indices = append(indices, i)
+		}
+	} else {
+		parts := strings.Fields(line)
+		for _, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil || n < 1 || n > len(images) {
+				fmt.Printf("输入无效: %s，已忽略\n", p)
+				continue
+			}
+			indices = append(indices, n-1)
+		}
+		if len(indices) == 0 {
+			fmt.Println("没有有效的序号，已取消操作")
+			return
+		}
+	}
+
+	// 对选中的镜像逐个执行加速拉取
+	for _, idx := range indices {
+		item := images[idx]
+		original := item.Image
+		accelerated := replaceImageWithSpecificDomain(original)
+
+		needRetagging := false
+		if accelerated != original {
+			fmt.Printf("\n镜像加速: %s -> %s\n", original, accelerated)
+			needRetagging = true
+		}
+
+		if config.Debug {
+			fmt.Printf("执行命令: docker pull %s\n", accelerated)
+		}
+
+		pullCmd := exec.Command("docker", "pull", accelerated)
+		pullCmd.Stdin = os.Stdin
+		pullCmd.Stdout = os.Stdout
+		pullCmd.Stderr = os.Stderr
+
+		if err := pullCmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "拉取镜像失败 (%s): %v\n", original, err)
+			// 失败时继续尝试下一个镜像
+			continue
+		}
+
+		if needRetagging {
+			retagImage(accelerated, original)
+		}
+	}
 }

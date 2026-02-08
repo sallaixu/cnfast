@@ -1,3 +1,5 @@
 module cnfast
 
-go 1.23
+go 1.17
+
+require gopkg.in/yaml.v3 v3.0.1

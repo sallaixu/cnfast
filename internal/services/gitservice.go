@@ -110,7 +110,7 @@ func selectProxyWithPrompt(proxyList []models.ProxyItem) models.ProxyItem {
 	}
 
 	selected := sortedProxies[index]
-	fmt.Printf("已选择代理: %s (评分: %d)\n", selected.GetDisplayName(), selected.Score)
+	// fmt.Printf("已选择代理: %s (评分: %d)\n", selected.GetDisplayName(), selected.Score)
 
 	return selected
 }

@@ -73,8 +73,14 @@ func (p *ProxyService) handlerCmd() error {
 
 	switch firstArg {
 	case "docker":
+		// 支持两种调用方式:
+		// 1) cnfast docker <subcommand>
+		// 2) cnfast docker compose (等价于 cnfast docker-compose)
+		if len(os.Args) >= 3 && strings.ToLower(os.Args[2]) == "compose" {
+			return p.handleDockerCommand(false)
+		}
 		return p.handleDockerCommand(true)
-	case "docker-compose", "docker compose":
+	case "docker-compose":
 		return p.handleDockerCommand(false)
 	case "git":
 		return p.handleGitCommand()
