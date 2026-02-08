@@ -9,7 +9,10 @@ import (
 	"cnfast/internal/pkg/httpclient"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"runtime"
 	"strings"
 )
 
@@ -84,6 +87,8 @@ func (p *ProxyService) handlerCmd() error {
 		return p.handleDockerCommand(false)
 	case "git":
 		return p.handleGitCommand()
+	case "update":
+		return p.handleUpdate()
 	case "-v", "--version", "v", "version":
 		help.PrintVersion()
 		return nil
@@ -122,6 +127,94 @@ func (p *ProxyService) handleGitCommand() error {
 
 	// 执行 Git 代理
 	GitProxy(proxyList)
+	return nil
+}
+
+// handleUpdate 处理 cnfast 自更新命令
+// 通过从 releases/latest 下载安装脚本并执行，实现与 install.sh 一致的更新逻辑
+func (p *ProxyService) handleUpdate() error {
+	fmt.Println("正在检查并更新 cnfast...")
+
+	// 根据当前系统和架构构建下载地址（与 install.sh 保持一致）
+	baseURL := "https://gitee.com/sallai/cnfast/releases/download/latest"
+
+	osType := runtime.GOOS
+	arch := runtime.GOARCH
+
+	var osPrefix string
+	switch osType {
+	case "linux":
+		osPrefix = "linux"
+	case "darwin":
+		osPrefix = "darwin"
+	default:
+		return fmt.Errorf("不支持的操作系统: %s", osType)
+	}
+
+	var archSuffix string
+	switch arch {
+	case "amd64":
+		archSuffix = "amd64"
+	case "arm64":
+		archSuffix = "arm64"
+	case "386":
+		archSuffix = "386"
+	case "arm":
+		archSuffix = "arm"
+	default:
+		return fmt.Errorf("不支持的架构: %s", arch)
+	}
+
+	binaryName := "cnfast"
+	downloadURL := fmt.Sprintf("%s/%s-%s-%s", baseURL, binaryName, osPrefix, archSuffix)
+
+	if config.Debug {
+		fmt.Printf("下载地址: %s\n", downloadURL)
+	}
+
+	// 发起 HTTP 请求下载最新二进制
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("下载更新失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("下载更新失败，HTTP 状态码: %d", resp.StatusCode)
+	}
+
+	// 创建临时文件下载新版本
+	tmpFile, err := os.CreateTemp("", "cnfast-update-*")
+	if err != nil {
+		return fmt.Errorf("创建临时文件失败: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+		return fmt.Errorf("写入临时文件失败: %w", err)
+	}
+
+	if err := tmpFile.Chmod(0755); err != nil {
+		return fmt.Errorf("设置临时文件权限失败: %w", err)
+	}
+
+	if err := tmpFile.Close(); err != nil {
+		return fmt.Errorf("关闭临时文件失败: %w", err)
+	}
+
+	// 按照 install.sh 逻辑，将二进制安装到 /usr/local/bin
+	installDir := "/usr/local/bin"
+	targetPath := installDir + "/" + binaryName
+
+	if err := os.MkdirAll(installDir, 0755); err != nil {
+		return fmt.Errorf("创建安装目录失败: %w", err)
+	}
+
+	if err := os.Rename(tmpFile.Name(), targetPath); err != nil {
+		return fmt.Errorf("替换 cnfast 二进制失败: %w", err)
+	}
+
+	fmt.Println("cnfast 更新成功！(已安装到 /usr/local/bin/cnfast)")
 	return nil
 }
 
