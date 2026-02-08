@@ -51,7 +51,7 @@ darwin: darwin-amd64 darwin-arm64
 local:
 	@echo "Building for local platform..."
 	@mkdir -p $(BUILD_DIR)/local
-	go build -o $(BUILD_DIR)/local/$(APP_NAME) $(GO_PACKAGE)
+	go build -o $(BUILD_DIR)/local/$(APP_NAME) -ldflags="$(LDFLAGS)" $(GO_PACKAGE)
 	@echo "Built: $(BUILD_DIR)/local/$(APP_NAME)"
 
 # 创建压缩包

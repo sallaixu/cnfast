@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"bufio"
+	"strconv"
 )
 
 // Git 代理配置
@@ -42,14 +44,18 @@ func GitProxy(proxyList []models.ProxyItem) {
 		os.Exit(1)
 	}
 
+	// 让用户选择要使用的代理服务
+	selectedProxy := selectProxyWithPrompt(proxyList)
+	selectedList := []models.ProxyItem{selectedProxy}
+
 	// 处理 down 命令特殊逻辑
 	if command == "down" {
-		executeDownloadWithProxyRetry(proxyList)
+		executeDownloadWithProxyRetry(selectedList)
 		return
 	}
 
 	// 尝试执行 Git 命令，支持代理重试
-	executeGitWithProxyRetry(proxyList, command)
+	executeGitWithProxyRetry(selectedList, command)
 }
 
 // executeGitWithProxyRetry 执行 Git 命令，支持代理重试
@@ -71,6 +77,42 @@ func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
 
 		return cmd, host, nil
 	}, "执行")
+}
+
+// selectProxyWithPrompt 显示代理列表并让用户选择
+func selectProxyWithPrompt(proxyList []models.ProxyItem) models.ProxyItem {
+	if len(proxyList) == 0 {
+		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
+		os.Exit(1)
+	}
+
+	sortedProxies := sortProxiesByScore(proxyList)
+
+	fmt.Println("可用加速服务列表:")
+	fmt.Printf("%-4s %-40s %-6s\n", "序号", "加速地址", "评分")
+	fmt.Println(strings.Repeat("-", 60))
+	for i, proxy := range sortedProxies {
+		fmt.Printf("%-4d %-40s %-6d\n", i+1, proxy.ProxyUrl, proxy.Score)
+	}
+
+	fmt.Print("请选择要使用的加速服务序号(直接回车默认 1): ")
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	index := 0
+	if input != "" {
+		if n, err := strconv.Atoi(input); err == nil && n >= 1 && n <= len(sortedProxies) {
+			index = n - 1
+		} else {
+			fmt.Println("输入无效，使用默认第 1 个代理")
+		}
+	}
+
+	selected := sortedProxies[index]
+	fmt.Printf("已选择代理: %s (评分: %d)\n", selected.GetDisplayName(), selected.Score)
+
+	return selected
 }
 
 // buildGitArgs 构建 Git 命令参数

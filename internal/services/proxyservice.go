@@ -97,8 +97,12 @@ func (p *ProxyService) handleDockerCommand(isDocker bool) error {
 		return fmt.Errorf("获取 Docker 代理服务失败: %w", err)
 	}
 
+	// 让用户选择 Docker 代理
+	selectedProxy := selectProxyWithPrompt(proxyList)
+	selectedList := []models.ProxyItem{selectedProxy}
+
 	// 执行 Docker 代理
-	DockerProxy(proxyList, isDocker)
+	DockerProxy(selectedList, isDocker)
 	return nil
 }
 

@@ -3,17 +3,15 @@ package services
 
 import (
 	"bufio"
-	"bytes"
 	"cnfast/internal/models"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
 )
 
 // CommandBuilder 命令构建函数类型
-// 返回: cmd 命令对象, sensitiveInfo 需要隐藏的敏感信息, error 错误
+// 返回: cmd 命令对象, error 错误
 type CommandBuilder func(proxy models.ProxyItem) (*exec.Cmd, string, error)
 
 // ExecuteWithProxyRetry 使用代理列表重试执行命令的通用框架
@@ -29,14 +27,17 @@ func ExecuteWithProxyRetry(proxyList []models.ProxyItem, cmdBuilder CommandBuild
 		fmt.Printf("使用代理: %s (评分: %d)\n", proxy.GetDisplayName(), proxy.Score)
 
 		// 构建命令
-		cmd, sensitiveInfo, err := cmdBuilder(proxy)
+		cmd, _, err := cmdBuilder(proxy)
 		if err != nil {
 			fmt.Printf("构建命令失败: %v\n", err)
 			return
 		}
 
-		// 执行命令并处理输出
-		err = ExecuteCommandWithOutput(cmd, sensitiveInfo)
+		// 执行命令并输出（不再隐藏敏感信息）
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
 
 		if err == nil {
 			fmt.Printf("✅ 代理 %s %s成功\n", proxy.ID, actionName)
@@ -61,69 +62,10 @@ func ExecuteWithProxyRetry(proxyList []models.ProxyItem, cmdBuilder CommandBuild
 	}
 }
 
-// ExecuteCommandWithOutput 执行命令并实时处理输出，隐藏敏感信息
-// cmd: 要执行的命令
-// sensitiveInfo: 需要在输出中隐藏的敏感信息（如代理地址）
-// 返回: error 执行错误
+// ExecuteCommandWithOutput 已不再使用，保留占位以兼容旧代码（无实际逻辑）
 func ExecuteCommandWithOutput(cmd *exec.Cmd, sensitiveInfo string) error {
-	// 设置标准输入
-	cmd.Stdin = os.Stdin
-
-	// 创建管道
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		fmt.Printf("创建stdout管道失败: %v\n", err)
-		return err
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		fmt.Printf("创建stderr管道失败: %v\n", err)
-		return err
-	}
-
-	// 启动命令
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("启动命令失败: %v\n", err)
-		return err
-	}
-
-	// 实时读取并处理 stdout
-	go streamPipeToOutput(stdoutPipe, os.Stdout, sensitiveInfo, "stdout")
-
-	// 实时读取并处理 stderr
-	go streamPipeToOutput(stderrPipe, os.Stderr, sensitiveInfo, "stderr")
-
-	// 等待命令完成
-	return cmd.Wait()
-}
-
-// streamPipeToOutput 实时读取管道内容并输出，同时隐藏敏感信息
-// pipe: 输入管道
-// output: 输出目标（如 os.Stdout 或 os.Stderr）
-// sensitiveInfo: 需要隐藏的敏感信息
-// pipeName: 管道名称（用于错误提示）
-func streamPipeToOutput(pipe io.ReadCloser, output *os.File, sensitiveInfo string, pipeName string) {
-	buf := make([]byte, 1024)
-	for {
-		n, err := pipe.Read(buf)
-		if n > 0 {
-			// 直接输出原始字节，保留控制字符
-			content := buf[:n]
-			// 替换敏感信息
-			if sensitiveInfo != "" {
-				processed := bytes.ReplaceAll(content, []byte(sensitiveInfo), []byte("***"))
-				output.Write(processed)
-			} else {
-				output.Write(content)
-			}
-		}
-		if err != nil {
-			if err != io.EOF {
-				fmt.Fprintf(os.Stderr, "读取%s错误: %v\n", pipeName, err)
-			}
-			break
-		}
-	}
+	// 直接运行命令，输出完全由调用方配置
+	return cmd.Run()
 }
 
 // askUserToRetry 询问用户是否重试

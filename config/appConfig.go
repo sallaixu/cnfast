@@ -22,8 +22,7 @@ var (
 
 	// 加密参数
 	AESKEY string
-
-	AESIV string
+    AESIV  string
 )
 
 // getEnvOrDefault 获取环境变量，如果不存在则返回默认值

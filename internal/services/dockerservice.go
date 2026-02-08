@@ -84,14 +84,14 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 		os.Exit(1)
 	}
 
-	// 获取最佳代理服务
-	bestProxy := getBestProxy(proxyList)
-	if bestProxy == nil {
+	// 代理服务在上游已选择，这里直接使用第一个
+	if len(proxyList) == 0 {
 		fmt.Fprintf(os.Stderr, "错误: 未找到可用的代理服务\n")
 		os.Exit(1)
 	}
 
-	fmt.Printf("使用最高评分代理: %s (评分: %d)\n", bestProxy.GetDisplayName(), bestProxy.Score)
+	bestProxy := &proxyList[0]
+	fmt.Printf("使用代理: %s (评分: %d)\n", bestProxy.ProxyUrl, bestProxy.Score)
 	SetBaseAccelDomain(bestProxy.ProxyUrl)
 
 	// 支持的命令列表
