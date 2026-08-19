@@ -35,3 +35,6 @@ build
 
 
 docs
+
+# 本地构建配置（含密钥，勿提交），模板见 .env.example
+.env

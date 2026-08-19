@@ -17,8 +17,8 @@ var (
 	// Timeout HTTP 请求超时时间（秒）
 	Timeout = getIntEnvOrDefault("CNFAST_TIMEOUT", 30)
 
-	// Version 应用程序版本
-	Version = "1.0.0"
+	// Version 应用程序版本（构建期通过 -ldflags -X 注入，无注入时为 dev）
+	Version = "dev"
 
 	// 加密参数
 	AESKEY string

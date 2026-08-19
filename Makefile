@@ -2,7 +2,9 @@
 
 # 配置变量
 APP_NAME := cnfast
-VERSION := 1.0.0
+# 语义化版本唯一真源，构建期通过 -ldflags -X 注入 config.Version
+# 发版时更新此值并打对应 git tag，且更新 CHANGELOG
+VERSION := 1.2.0
 BUILD_DIR := build
 GO_PACKAGE := .
 
@@ -10,7 +12,8 @@ GO_PACKAGE := .
 # 构建 LDFLAGS
 LDFLAGS := -s -w \
 	-X cnfast/config.AESKEY=$(AESKEY) \
-	-X cnfast/config.AESIV=$(AESIV)
+	-X cnfast/config.AESIV=$(AESIV) \
+	-X cnfast/config.Version=$(VERSION)
 
 # 定义平台架构组合
 PLATFORMS := linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64
