@@ -2,16 +2,17 @@
 package services
 
 import (
+	"bufio"
 	"cnfast/config"
 	"cnfast/internal/models"
+	"cnfast/internal/pkg/colors"
 	"cnfast/internal/pkg/util"
 	"fmt"
 	"os"
 	"os/exec"
 	"regexp"
-	"strings"
-	"bufio"
 	"strconv"
+	"strings"
 )
 
 // Git 代理配置
@@ -28,8 +29,8 @@ var (
 func GitProxy(proxyList []models.ProxyItem) {
 	// 检查命令参数数量
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "错误: 参数数量不足\n")
-		fmt.Fprintf(os.Stderr, "用法: cnfast git <command> [arguments]\n")
+		fmt.Fprintln(os.Stderr, colors.Error("参数数量不足"))
+		fmt.Fprintln(os.Stderr, "用法: cnfast git <command> [arguments]")
 		os.Exit(1)
 	}
 
@@ -39,7 +40,7 @@ func GitProxy(proxyList []models.ProxyItem) {
 
 	// 检查命令是否支持
 	if !isCommandSupported(command, supportedCommands) {
-		fmt.Fprintf(os.Stderr, "错误: 不支持的命令 '%s'\n", command)
+		fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("不支持的命令 '%s'", command)))
 		fmt.Fprintf(os.Stderr, "支持的命令: %s\n", strings.Join(supportedCommands, ", "))
 		os.Exit(1)
 	}
@@ -66,7 +67,7 @@ func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
 		newArgs := buildGitArgs(proxy.ProxyUrl, command)
 
 		if config.Debug {
-			fmt.Printf("执行命令: git %s\n", strings.Join(newArgs, " "))
+			fmt.Println(colors.Info(fmt.Sprintf("执行命令: git %s", strings.Join(newArgs, " "))))
 		}
 
 		// 提取主机名（用于隐藏敏感信息）
@@ -79,23 +80,27 @@ func executeGitWithProxyRetry(proxyList []models.ProxyItem, command string) {
 	}, "执行")
 }
 
+// scoreColor 根据评分返回对应颜色（10 分制）
+func scoreColor(score int) string {
+	switch {
+	case score >= 9:
+		return colors.Green(fmt.Sprintf("%d", score))
+	case score >= 7:
+		return colors.Cyan(fmt.Sprintf("%d", score))
+	case score >= 5:
+		return colors.Yellow(fmt.Sprintf("%d", score))
+	default:
+		return colors.Red(fmt.Sprintf("%d", score))
+	}
+}
+
 // selectProxyWithPrompt 显示代理列表并让用户选择
 func selectProxyWithPrompt(proxyList []models.ProxyItem) models.ProxyItem {
-	if len(proxyList) == 0 {
-		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
-		os.Exit(1)
-	}
-
 	sortedProxies := sortProxiesByScore(proxyList)
 
-	fmt.Println("可用加速服务列表:")
-	fmt.Printf("%-4s %-40s %-6s\n", "序号", "加速地址", "评分")
-	fmt.Println(strings.Repeat("-", 60))
-	for i, proxy := range sortedProxies {
-		fmt.Printf("%-4d %-40s %-6d\n", i+1, proxy.ProxyUrl, proxy.Score)
-	}
+	renderProxyTable(sortedProxies)
 
-	fmt.Print("请选择要使用的加速服务序号(直接回车默认 1): ")
+	fmt.Printf("请选择要使用的加速服务序号%s: ", colors.Faint("(直接回车默认 1)"))
 	reader := bufio.NewReader(os.Stdin)
 	input, _ := reader.ReadString('\n')
 	input = strings.TrimSpace(input)
@@ -105,15 +110,47 @@ func selectProxyWithPrompt(proxyList []models.ProxyItem) models.ProxyItem {
 		if n, err := strconv.Atoi(input); err == nil && n >= 1 && n <= len(sortedProxies) {
 			index = n - 1
 		} else {
-			fmt.Println("输入无效，使用默认第 1 个代理")
+			fmt.Println(colors.Warn("输入无效，使用默认第 1 个代理"))
 		}
 	}
 
 	selected := sortedProxies[index]
-	// fmt.Printf("已选择代理: %s (评分: %d)\n", selected.GetDisplayName(), selected.Score)
+	fmt.Println(colors.Info(fmt.Sprintf("已选择代理: %s (评分: %d)", colors.Cyan(selected.GetDisplayName()), selected.Score)))
+	fmt.Println()
 
 	return selected
 }
+
+// renderProxyTable 渲染代理列表表格
+func renderProxyTable(sortedProxies []models.ProxyItem) {
+	if len(sortedProxies) == 0 {
+		fmt.Fprintln(os.Stderr, colors.Error("未找到可用的代理服务"))
+		os.Exit(1)
+	}
+
+	fmt.Println(colors.Bold(colors.Cyan("可用加速服务列表:")))
+	fmt.Printf("%s%s%s%s\n",
+		util.Pad(colors.Faint("序号"), carTableIdxColWidth),
+		util.Pad(colors.Faint("加速地址"), carTableURLColWidth),
+		util.Pad(colors.Faint("评分"), carTableScoreColWidth),
+		colors.Faint("评级"))
+	fmt.Println(colors.Faint(strings.Repeat("-", 74)))
+	for i, proxy := range sortedProxies {
+		fmt.Printf("%s%s%s%s\n",
+			util.Pad(fmt.Sprintf("%d", i+1), carTableIdxColWidth),
+			util.Pad(util.Truncate(proxy.ProxyUrl, carTableURLColWidth-1), carTableURLColWidth),
+			util.Pad(scoreColor(proxy.Score), carTableScoreColWidth),
+			proxy.GetScoreDescription())
+	}
+	fmt.Println()
+}
+
+// 代理表格列宽
+const (
+	carTableIdxColWidth   = 6
+	carTableURLColWidth   = 54
+	carTableScoreColWidth = 6
+)
 
 // buildGitArgs 构建 Git 命令参数
 func buildGitArgs(proxyUrl, command string) []string {
@@ -123,7 +160,7 @@ func buildGitArgs(proxyUrl, command string) []string {
 		if isGitHubURL(arg) {
 			acceleratedURL := proxyUrl + "/" + arg
 			if config.Debug {
-				fmt.Printf("URL 加速: %s -> %s\n", arg, acceleratedURL)
+				fmt.Println(colors.Info(fmt.Sprintf("URL 加速: %s -> %s", arg, acceleratedURL)))
 			}
 			arg = acceleratedURL
 		}
@@ -142,8 +179,8 @@ func isGitHubURL(url string) bool {
 func executeDownloadWithProxyRetry(proxyList []models.ProxyItem) {
 	// 检查下载 URL 参数
 	if len(os.Args) < 4 {
-		fmt.Fprintf(os.Stderr, "错误: 缺少下载链接地址\n")
-		fmt.Fprintf(os.Stderr, "用法: cnfast git down <下载链接地址> [输出文件名]\n")
+		fmt.Fprintln(os.Stderr, colors.Error("缺少下载链接地址"))
+		fmt.Fprintln(os.Stderr, "用法: cnfast git down <下载链接地址> [输出文件名]")
 		os.Exit(1)
 	}
 
@@ -151,10 +188,17 @@ func executeDownloadWithProxyRetry(proxyList []models.ProxyItem) {
 
 	// 检查是否为 GitHub URL
 	if !isGitHubURL(downloadURL) {
-		fmt.Fprintf(os.Stderr, "错误: 仅支持 GitHub 链接下载\n")
-		fmt.Fprintf(os.Stderr, "链接格式: https://github.com/...\n")
+		fmt.Fprintln(os.Stderr, colors.Error("仅支持 GitHub 链接下载"))
+		fmt.Fprintln(os.Stderr, "链接格式: https://github.com/...")
 		os.Exit(1)
 	}
+
+	// 标题行样式（curl 的 --progress-bar 进度原样放行）
+	fmt.Printf("%s %s\n", colors.Bold(colors.Cyan("▼ 下载")), downloadURL)
+	if len(os.Args) >= 5 {
+		fmt.Printf("%s %s\n", colors.Faint("保存为"), os.Args[4])
+	}
+	fmt.Println(colors.Faint(strings.Repeat("─", 60)))
 
 	// 使用通用的代理重试框架
 	ExecuteWithProxyRetry(proxyList, func(proxy models.ProxyItem) (*exec.Cmd, string, error) {
@@ -162,7 +206,7 @@ func executeDownloadWithProxyRetry(proxyList []models.ProxyItem) {
 		proxiedURL := proxy.ProxyUrl + "/" + downloadURL
 
 		if config.Debug {
-			fmt.Printf("下载地址: %s\n", proxiedURL)
+			fmt.Println(colors.Info(fmt.Sprintf("下载地址: %s", proxiedURL)))
 		}
 
 		// 提取主机名用于隐藏敏感信息
@@ -194,7 +238,7 @@ func executeDownloadWithProxyRetry(proxyList []models.ProxyItem) {
 			for j, arg := range safeArgs {
 				safeArgs[j] = strings.ReplaceAll(arg, host, "***")
 			}
-			fmt.Printf("执行命令: curl %s\n", strings.Join(safeArgs, " "))
+			fmt.Println(colors.Info(fmt.Sprintf("执行命令: curl %s", strings.Join(safeArgs, " "))))
 		}
 
 		// 执行 curl 命令

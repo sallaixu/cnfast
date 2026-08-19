@@ -21,14 +21,14 @@
 
 ## ✨ 功能特性
 
-- 🚀 **极速克隆**：加速GitHub仓库的克隆、拉取和推送操作
+- 🚀 **极速克隆**：加速GitHub仓库的克隆与拉取，并支持代理下载 GitHub Release 文件
 - 🐳 **镜像加速**：优化Docker镜像拉取速度，支持多 registry
 - 🔒 **稳定可靠**：基于稳定的代理技术，保证连接成功率
 - 🛠️ **简单易用**：命令行工具，一键加速，无需复杂配置
 - 🌐 **多平台支持**：支持Linux、macOS和Windows系统
-- ⚡ **智能选择**：自动选择最优代理服务，确保最佳性能
-- 🔧 **高度可配置**：支持环境变量配置，满足不同需求
-- 📊 **性能监控**：提供详细的性能统计和调试信息
+- ⚡ **择优推荐**：交互式选择评分最高的代理服务
+- 🔧 **高度可配置**：支持环境变量配置（API 地址、调试模式、超时时间）
+- 📊 **调试支持**：提供 `CNFAST_DEBUG` 调试模式，输出详细执行信息
 
 ## 🚀 快速开始
 
@@ -71,15 +71,14 @@ cnfast --version
 # 克隆仓库
 cnfast git clone https://github.com/microsoft/vscode.git
 
-# 拉取更新
+# 拉取更新（需先进入已克隆的仓库目录）
 cnfast git pull
 
-# 获取远程更改
-cnfast git fetch
-
-# 推送更改
-cnfast git push
+# 代理下载 GitHub Release 文件
+cnfast git down https://github.com/user/repo/releases/download/v1.0.0/file.tar.gz
 ```
+
+> 注：当前版本仅支持 `clone`、`pull`、`down` 三个 git 子命令。
 
 ### Docker 镜像加速
 
@@ -106,8 +105,8 @@ cnfast --version
 # 查看帮助信息
 cnfast --help
 
-# 检查网络状态
-cnfast status
+# 更新 cnfast 自身
+cnfast update
 ```
 
 ## ⚙️ 配置说明
@@ -137,12 +136,12 @@ export CNFAST_TIMEOUT=30
 
 ## 🏗️ 工作原理
 
-CNFast 通过智能代理技术，自动选择最优的国内镜像节点：
+CNFast 通过智能代理技术，为 GitHub 与 Docker 访问加速：
 
-1. **智能路由**：自动选择最优的国内镜像节点
-2. **连接复用**：减少连接建立时间，提高效率
-3. **缓存机制**：利用本地缓存，提高重复请求的响应速度
-4. **故障转移**：当主代理不可用时，自动切换到备用代理
+1. **代理发现**：启动时从 API 服务获取可用的代理列表，按评分排序
+2. **交互选择**：Git 命令执行前提示用户从代理列表中选择一个代理服务
+3. **URL 改写**：Git 克隆/拉取时在 GitHub URL 前拼接代理前缀；Docker 拉取时将镜像名中的 registry 域名替换为加速域名
+4. **失败重试**：Git 操作失败时可选择尝试下一个可用代理
 
 ## 📊 性能对比
 
@@ -158,16 +157,16 @@ CNFast 通过智能代理技术，自动选择最优的国内镜像节点：
 A: 是的，CNFast 是完全免费的开源工具。
 
 ### Q: 支持哪些 GitHub 操作？
-A: 支持 clone、pull、push、fetch 等所有 git 操作。
+A: 支持 `clone`（克隆）、`pull`（拉取更新）和 `down`（代理下载 Release 文件）。暂不支持 `push`、`fetch` 等其它 git 子命令。
 
 ### Q: 是否支持私有仓库？
-A: 支持，CNFast 会保持原有的认证信息不变。
+A: CNFast 不修改原有认证信息，认证行为与直接使用 git 一致，但加速效果取决于所选的代理服务对私有仓库的支持情况。
 
 ### Q: 如何更新 CNFast？
-A: 重新下载最新版本的二进制文件，或使用安装脚本更新。
+A: 执行 `cnfast update`，或重新下载最新版本的二进制文件/使用安装脚本更新。
 
 ### Q: 支持哪些操作系统？
-A: 支持 Linux、macOS 和 Windows 系统。
+A: 源码支持 Linux、macOS，Windows 支持见 [docs/USER_GUIDE.md](docs/USER_GUIDE.md)。
 
 ### Q: 如何获取帮助？
 A: 使用 `cnfast --help` 查看帮助信息，或访问 [GitHub Issues](https://github.com/sallaixu/cnfast/issues)。

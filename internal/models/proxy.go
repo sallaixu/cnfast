@@ -45,13 +45,14 @@ func (p *ProxyItem) GetDisplayName() string {
 }
 
 // GetScoreDescription 获取评分的描述信息
+// 评分采用 10 分制
 func (p *ProxyItem) GetScoreDescription() string {
 	switch {
-	case p.Score >= 90:
+	case p.Score >= 9:
 		return "优秀"
-	case p.Score >= 70:
+	case p.Score >= 7:
 		return "良好"
-	case p.Score >= 50:
+	case p.Score >= 5:
 		return "一般"
 	default:
 		return "较差"

@@ -4,6 +4,7 @@ package services
 import (
 	"cnfast/config"
 	"cnfast/internal/models"
+	"cnfast/internal/pkg/colors"
 
 	"bufio"
 	"fmt"
@@ -52,7 +53,7 @@ func getAccelDomains() []string {
 // domain: 新的基础加速域名
 func SetBaseAccelDomain(domain string) {
 	if config.Debug {
-		fmt.Printf("设置代理域名: %s\n", domain)
+		fmt.Println(colors.Info(fmt.Sprintf("设置代理域名: %s", domain)))
 	}
 	baseAccelDomain = domain
 
@@ -85,19 +86,19 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 	// 检查命令参数数量
 	if len(os.Args) < 3 {
-		fmt.Fprintf(os.Stderr, "错误: 参数数量不足\n")
-		fmt.Fprintf(os.Stderr, "用法: cnfast docker <command> [arguments]\n")
+		fmt.Fprintln(os.Stderr, colors.Error("参数数量不足"))
+		fmt.Fprintln(os.Stderr, "用法: cnfast docker <command> [arguments]")
 		os.Exit(1)
 	}
 
 	// 代理服务在上游已选择，这里直接使用第一个
 	if len(proxyList) == 0 {
-		fmt.Fprintf(os.Stderr, "错误: 未找到可用的代理服务\n")
+		fmt.Fprintln(os.Stderr, colors.Error("未找到可用的代理服务"))
 		os.Exit(1)
 	}
 
 	bestProxy := &proxyList[0]
-	fmt.Printf("使用代理: %s (评分: %d)\n", bestProxy.ProxyUrl, bestProxy.Score)
+	fmt.Println(colors.Info(fmt.Sprintf("使用代理: %s (评分: %d)", colors.Cyan(bestProxy.ProxyUrl), bestProxy.Score)))
 	SetBaseAccelDomain(bestProxy.ProxyUrl)
 
 	// 支持的命令列表
@@ -106,7 +107,7 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 	// 检查命令是否支持
 	if !isCommandSupported(command, supportedCommands) {
-		fmt.Fprintf(os.Stderr, "错误: 不支持的命令 '%s'\n", command)
+		fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("不支持的命令 '%s'", command)))
 		fmt.Fprintf(os.Stderr, "支持的命令: %s\n", strings.Join(supportedCommands, ", "))
 		os.Exit(1)
 	}
@@ -123,7 +124,7 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 			originalImage = arg
 			acceleratedImage = replaceImageWithSpecificDomain(arg)
 			if acceleratedImage != originalImage {
-				fmt.Printf("镜像加速: %s -> %s\n", originalImage, acceleratedImage)
+				fmt.Println(colors.Label(fmt.Sprintf("镜像加速: %s -> %s", originalImage, colors.Green(acceleratedImage))))
 				needRetagging = (command == "pull") // 只有 pull 命令需要重新打标签
 			}
 			arg = acceleratedImage
@@ -132,7 +133,7 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 	}
 
 	if config.Debug {
-		fmt.Printf("执行命令: docker %s\n", strings.Join(newArgs, " "))
+		fmt.Println(colors.Info(fmt.Sprintf("执行命令: docker %s", strings.Join(newArgs, " "))))
 	}
 
 	// 执行 Docker 命令
@@ -143,7 +144,7 @@ func DockerProxy(proxyList []models.ProxyItem, dockerFlag bool) {
 
 	// 运行命令
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "命令执行失败: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("命令执行失败: %v", err)))
 		os.Exit(1)
 	}
 
@@ -210,7 +211,7 @@ func retagImage(acceleratedImage, originalImage string) {
 	tagCmd.Stderr = os.Stderr
 
 	if err := tagCmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "警告: 重新打标签失败: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Warn(fmt.Sprintf("重新打标签失败: %v", err)))
 		fmt.Fprintf(os.Stderr, "镜像仍然可用，但标签为: %s\n", acceleratedImage)
 		return
 	}
@@ -225,7 +226,7 @@ func retagImage(acceleratedImage, originalImage string) {
 
 	if err := rmiCmd.Run(); err != nil {
 		if config.Debug {
-			fmt.Fprintf(os.Stderr, "警告: 删除旧标签失败: %v\n", err)
+			fmt.Fprintln(os.Stderr, colors.Warn(fmt.Sprintf("删除旧标签失败: %v", err)))
 		}
 		// 忽略删除失败，因为不影响镜像使用
 	}
@@ -258,17 +259,17 @@ func runComposeConfig(composeFile string) ([]byte, error) {
 // proxyList: 代理服务列表
 func DockerComposeProxy(proxyList []models.ProxyItem) {
 	if len(proxyList) == 0 {
-		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
+		fmt.Fprintln(os.Stderr, colors.Error("未找到可用的代理服务"))
 		os.Exit(1)
 	}
 
 	best := getBestProxy(proxyList)
 	if best == nil {
-		fmt.Fprintln(os.Stderr, "错误: 未找到可用的代理服务")
+		fmt.Fprintln(os.Stderr, colors.Error("未找到可用的代理服务"))
 		os.Exit(1)
 	}
 
-	fmt.Printf("使用代理: %s (评分: %d)\n", best.ProxyUrl, best.Score)
+	fmt.Println(colors.Info(fmt.Sprintf("使用代理: %s (评分: %d)", colors.Cyan(best.ProxyUrl), best.Score)))
 	SetBaseAccelDomain(best.ProxyUrl)
 
 	// 只考虑单 compose 文件，在当前目录按常见命名查找
@@ -288,18 +289,18 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 	}
 
 	if composeFile == "" {
-		fmt.Fprintln(os.Stderr, "错误: 当前目录未找到 docker compose 配置文件 (docker-compose.yml|docker-compose.yaml|compose.yml|compose.yaml)")
+		fmt.Fprintln(os.Stderr, colors.Error("当前目录未找到 docker compose 配置文件 (docker-compose.yml|docker-compose.yaml|compose.yml|compose.yaml)"))
 		os.Exit(1)
 	}
 
 	if config.Debug {
-		fmt.Printf("使用 compose 文件: %s\n", composeFile)
+		fmt.Println(colors.Info(fmt.Sprintf("使用 compose 文件: %s", composeFile)))
 	}
 
 	// 使用 docker compose/docker-compose CLI 解析配置为 YAML
 	output, err := runComposeConfig(composeFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "错误: 解析 docker compose 配置失败: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("解析 docker compose 配置失败: %v", err)))
 		fmt.Fprintf(os.Stderr, "命令输出:\n%s\n", string(output))
 		os.Exit(1)
 	}
@@ -313,7 +314,7 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 
 	var cfg composeConfig
 	if err := yaml.Unmarshal(output, &cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: 解析 docker compose YAML 失败: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("解析 docker compose YAML 失败: %v", err)))
 		os.Exit(1)
 	}
 
@@ -354,7 +355,7 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 		return images[i].Image < images[j].Image
 	})
 
-	fmt.Println("发现以下镜像:")
+	fmt.Println(colors.Bold(colors.Cyan("发现以下镜像:")))
 	for i, item := range images {
 		svcNames := strings.Join(item.Services, ", ")
 		fmt.Printf("%d) %-20s -> %s\n", i+1, svcNames, item.Image)
@@ -377,13 +378,13 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 		for _, p := range parts {
 			n, err := strconv.Atoi(p)
 			if err != nil || n < 1 || n > len(images) {
-				fmt.Printf("输入无效: %s，已忽略\n", p)
+				fmt.Println(colors.Warn(fmt.Sprintf("输入无效: %s，已忽略", p)))
 				continue
 			}
 			indices = append(indices, n-1)
 		}
 		if len(indices) == 0 {
-			fmt.Println("没有有效的序号，已取消操作")
+			fmt.Println(colors.Warn("没有有效的序号，已取消操作"))
 			return
 		}
 	}
@@ -396,12 +397,12 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 
 		needRetagging := false
 		if accelerated != original {
-			fmt.Printf("\n镜像加速: %s -> %s\n", original, accelerated)
+			fmt.Printf("\n%s\n", colors.Label(fmt.Sprintf("镜像加速: %s -> %s", original, colors.Green(accelerated))))
 			needRetagging = true
 		}
 
 		if config.Debug {
-			fmt.Printf("执行命令: docker pull %s\n", accelerated)
+			fmt.Println(colors.Info(fmt.Sprintf("执行命令: docker pull %s", accelerated)))
 		}
 
 		pullCmd := exec.Command("docker", "pull", accelerated)
@@ -410,7 +411,7 @@ func DockerComposeProxy(proxyList []models.ProxyItem) {
 		pullCmd.Stderr = os.Stderr
 
 		if err := pullCmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "拉取镜像失败 (%s): %v\n", original, err)
+			fmt.Fprintln(os.Stderr, colors.Error(fmt.Sprintf("拉取镜像失败 (%s): %v", original, err)))
 			// 失败时继续尝试下一个镜像
 			continue
 		}

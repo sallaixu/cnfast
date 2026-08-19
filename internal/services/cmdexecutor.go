@@ -4,6 +4,7 @@ package services
 import (
 	"bufio"
 	"cnfast/internal/models"
+	"cnfast/internal/pkg/colors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -24,12 +25,12 @@ func ExecuteWithProxyRetry(proxyList []models.ProxyItem, cmdBuilder CommandBuild
 
 	// 尝试每个代理
 	for i, proxy := range sortedProxies {
-		fmt.Printf("使用代理: %s (评分: %d)\n", proxy.GetDisplayName(), proxy.Score)
+		fmt.Println(colors.Info(fmt.Sprintf("使用代理: %s (评分: %d)", colors.Cyan(proxy.GetDisplayName()), proxy.Score)))
 
 		// 构建命令
 		cmd, _, err := cmdBuilder(proxy)
 		if err != nil {
-			fmt.Printf("构建命令失败: %v\n", err)
+			fmt.Println(colors.Error(fmt.Sprintf("构建命令失败: %v", err)))
 			return
 		}
 
@@ -40,7 +41,7 @@ func ExecuteWithProxyRetry(proxyList []models.ProxyItem, cmdBuilder CommandBuild
 		err = cmd.Run()
 
 		if err == nil {
-			fmt.Printf("✅ 代理 %s %s成功\n", proxy.ID, actionName)
+			fmt.Println(colors.Success(fmt.Sprintf("代理 %s %s成功", proxy.ID, actionName)))
 			return
 		}
 
@@ -48,15 +49,17 @@ func ExecuteWithProxyRetry(proxyList []models.ProxyItem, cmdBuilder CommandBuild
 		if i < len(sortedProxies)-1 {
 			// 询问用户是否尝试下一个代理
 			if askUserToRetry() {
-				fmt.Printf("\n🔄 尝试下一个代理...\n\n")
+				fmt.Println()
+				fmt.Println(colors.Info("尝试下一个代理..."))
+				fmt.Println()
 				continue
 			} else {
-				fmt.Println("用户取消操作")
+				fmt.Println(colors.Warn("用户取消操作"))
 				os.Exit(1)
 			}
 		} else {
 			// 所有代理都失败了
-			fmt.Fprintf(os.Stderr, "\n❌ 所有代理都%s失败，最后一个错误: %v\n", actionName, err)
+			fmt.Fprintf(os.Stderr, "\n%s\n", colors.Error(fmt.Sprintf("所有代理都%s失败，最后一个错误: %v", actionName, err)))
 			os.Exit(1)
 		}
 	}

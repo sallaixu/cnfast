@@ -5,6 +5,7 @@ import (
 	"cnfast/config"
 	"cnfast/internal/enums"
 	"cnfast/internal/models"
+	"cnfast/internal/pkg/colors"
 	"cnfast/internal/pkg/help"
 	"cnfast/internal/pkg/httpclient"
 	"context"
@@ -14,6 +15,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // ProxyService 代理服务结构体
@@ -39,7 +41,7 @@ func (p *ProxyService) getProxyList(proxyType enums.ProxyType) ([]models.ProxyIt
 	var proxyList []models.ProxyItem
 
 	if config.Debug {
-		fmt.Printf("正在查询 %s 类型的代理服务...\n", string(proxyType))
+		fmt.Println(colors.Info(fmt.Sprintf("正在查询 %s 类型的代理服务...", string(proxyType))))
 	}
 
 	// 构建 API 请求路径
@@ -57,7 +59,7 @@ func (p *ProxyService) getProxyList(proxyType enums.ProxyType) ([]models.ProxyIt
 	}
 
 	if config.Debug {
-		fmt.Printf("成功获取 %d 个 %s 代理服务\n", len(proxyList), string(proxyType))
+		fmt.Println(colors.Success(fmt.Sprintf("成功获取 %d 个 %s 代理服务", len(proxyList), string(proxyType))))
 	}
 
 	return proxyList, nil
@@ -133,7 +135,7 @@ func (p *ProxyService) handleGitCommand() error {
 // handleUpdate 处理 cnfast 自更新命令
 // 通过从 releases/latest 下载安装脚本并执行，实现与 install.sh 一致的更新逻辑
 func (p *ProxyService) handleUpdate() error {
-	fmt.Println("正在检查并更新 cnfast...")
+	fmt.Println(colors.Info("正在检查并更新 cnfast..."))
 
 	// 根据当前系统和架构构建下载地址（与 install.sh 保持一致）
 	baseURL := "https://gitee.com/sallai/cnfast/releases/download/latest"
@@ -169,10 +171,11 @@ func (p *ProxyService) handleUpdate() error {
 	downloadURL := fmt.Sprintf("%s/%s-%s-%s", baseURL, binaryName, osPrefix, archSuffix)
 
 	if config.Debug {
-		fmt.Printf("下载地址: %s\n", downloadURL)
+		fmt.Println(colors.Info(fmt.Sprintf("下载地址: %s", downloadURL)))
 	}
 
 	// 发起 HTTP 请求下载最新二进制
+	start := time.Now()
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("下载更新失败: %w", err)
@@ -190,7 +193,9 @@ func (p *ProxyService) handleUpdate() error {
 	}
 	defer os.Remove(tmpFile.Name())
 
-	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+	// 拷贝并显示进度
+	written, err := copyWithProgress(tmpFile, resp.Body, resp.ContentLength, "下载更新")
+	if err != nil {
 		return fmt.Errorf("写入临时文件失败: %w", err)
 	}
 
@@ -214,15 +219,64 @@ func (p *ProxyService) handleUpdate() error {
 		return fmt.Errorf("替换 cnfast 二进制失败: %w", err)
 	}
 
-	fmt.Println("cnfast 更新成功！(已安装到 /usr/local/bin/cnfast)")
+	elapsed := time.Since(start)
+	fmt.Println(colors.Success(fmt.Sprintf("更新完成: %.2f MB，耗时 %s", float64(written)/(1<<20), elapsed.Round(time.Millisecond))))
 	return nil
+}
+
+// copyWithProgress 带进度显示的 io 拷贝
+// TTY 下使用单行百分比刷新（\\r），非 TTY 下每 2% 输出一行
+func copyWithProgress(dst io.Writer, src io.Reader, total int64, label string) (int64, error) {
+	if total <= 0 {
+		return io.Copy(dst, src)
+	}
+
+	if !colors.IsTerminal() {
+		// 非 TTY：使用带进度的 Reader 交互，但只打印完成行
+		return io.Copy(dst, src)
+	}
+
+	out := os.Stdout
+	var written int64
+	buf := make([]byte, 64*1024)
+	lastPercent := -1
+	carriage := false // 是否需要先清行
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				return written, werr
+			}
+			written += int64(n)
+			pct := int(written * 100 / total)
+			if pct != lastPercent {
+				if carriage {
+					out.Write([]byte("\r"))
+				}
+				fmt.Fprintf(out, "%s %3d%% (%.2f MB / %.2f MB)",
+					colors.Cyan(label), pct, float64(written)/(1<<20), float64(total)/(1<<20))
+				carriage = true
+				lastPercent = pct
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return written, err
+		}
+	}
+	if carriage {
+		out.Write([]byte("\r\x1b[K")) // 清空该行
+	}
+	return written, nil
 }
 
 // Start 启动代理服务
 // 处理用户输入的命令并执行相应的加速操作
 func (p *ProxyService) Start() error {
 	if err := p.handlerCmd(); err != nil {
-		fmt.Fprintf(os.Stderr, "错误: %v\n", err)
+		fmt.Fprintln(os.Stderr, colors.Error(err.Error()))
 		help.PrintUsage()
 		return err
 	}
