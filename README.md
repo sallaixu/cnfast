@@ -35,16 +35,18 @@
 ### 一键安装
 
 ```bash
+linux
 # 使用curl安装
-curl -fsSL https://raw.githubusercontent.com/sallai/release/main/install.sh | bash
+curl -fsSL https://gitee.com/sallai/cnfast/raw/main/install.sh | bash
 
-# 或使用wget安装
-wget -qO- https://raw.githubusercontent.com/sallai/release/main/install.sh | bash
+windows
+
+powershell -Command "iwr -useb https://gitee.com/sallai/cnfast/raw/main/install.ps1 | iex"
 ```
 
 ### 手动安装
 
-1. 从 [Release页面](https://github.com/sallai/release/releases) 下载对应平台的二进制文件
+1. 从 [Release页面](https://gitee.com/sallai/cnfast/releases#release-latest) 下载对应平台的二进制文件
 2. 解压并移动到系统PATH目录：
 
 ```bash
